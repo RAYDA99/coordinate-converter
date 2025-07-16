@@ -23,8 +23,6 @@
   <label>Zone Number: <input type="number" id="zoneNumber" value="43" /></label><br><br>
   <label><input type="radio" name="hemisphereNS" value="north" checked /> Northern Hemisphere</label>
   <label><input type="radio" name="hemisphereNS" value="south" /> Southern Hemisphere</label><br>
-  <label><input type="radio" name="hemisphereEW" value="east" checked /> Eastern Hemisphere</label>
-  <label><input type="radio" name="hemisphereEW" value="west" /> Western Hemisphere</label>
 
   <p><b>Paste your table from Excel (Easting, Northing, Name, Description[optional])</b></p>
   <textarea id="geoInput" placeholder="412345	8212345	WTG-01	Optional Description"></textarea>
@@ -60,9 +58,7 @@ def parse_and_convert():
 
     zone_number = int(document.getElementById("zoneNumber").value)
     hemi_ns = document.querySelector("input[name='hemisphereNS']:checked").value
-    hemi_ew = document.querySelector("input[name='hemisphereEW']:checked").value
     is_south = hemi_ns == "south"
-    is_west = hemi_ew == "west"
 
     html = "<table><tr><th class='no-copy'>Select</th><th>Lat</th><th>Lon</th><th>Name</th><th>Description</th></tr>"
 
@@ -76,8 +72,6 @@ def parse_and_convert():
             e = float(easting)
             n = float(northing)
             lat, lon = utm.to_latlon(e, n, zone_number, northern=not is_south)
-            if is_west:
-                lon = -abs(lon)
             row = f"<tr><td class='no-copy'><input type='checkbox' class='wtg-checkbox' data-name='{name}'></td><td>{lat:.6f}</td><td>{lon:.6f}</td><td>{name}</td><td class='desc'>{desc}</td></tr>"
             html += row
         except Exception as e:
