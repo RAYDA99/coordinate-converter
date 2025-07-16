@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Coordinate Converter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/684/684908.png" type="image/png" />
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 1em; }
+    textarea { width: 100%; height: 150px; margin-bottom: 1em; }
+    button { padding: 0.6em 1.2em; margin: 0.5em 0.3em; }
+    label { margin-right: 1em; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1em; }
+    th, td { border: 1px solid #ccc; padding: 5px; text-align: left; }
+    th { background-color: #f0f0f0; }
+    .no-copy { user-select: none; }
+  </style>
+</head>
+<body>
+  <h2>UTM to Latitude/Longitude Converter</h2>
+
+  <label>Zone Number: <input type="number" id="zoneNumber" value="43" /></label><br><br>
+  <label><input type="radio" name="hemisphereNS" value="north" checked /> Northern Hemisphere</label>
+  <label><input type="radio" name="hemisphereNS" value="south" /> Southern Hemisphere</label><br>
+  <label><input type="radio" name="hemisphereEW" value="east" checked /> Eastern Hemisphere</label>
+  <label><input type="radio" name="hemisphereEW" value="west" /> Western Hemisphere</label>
+
+  <p><b>Paste your table from Excel (Easting, Northing, Name, Description[optional])</b></p>
+  <textarea id="geoInput" placeholder="412345	8212345	WTG-01	Optional Description"></textarea>
+  <div>
+  <button id="convertBtn">Convert</button>
+  <button onclick="selectAllCheckboxes(true)">Select All</button>
+  <button onclick="selectAllCheckboxes(false)">Deselect All</button>
+  <button onclick="copyAllRows()">Copy All to Clipboard</button>
+  </div>
+
+  <div id="results"></div>
+
+  <h3>Add Description to Selected WTGs</h3>
+  <input type="text" id="descriptionInput" placeholder="Enter description" />
+  <button onclick="applyDescription()">Apply Description</button>
+
+  <script>
+    let pyodide;
+    let lastCheckedIndex = null;
+
+    async function init() {
+      pyodide = await loadPyodide();
+      await pyodide.loadPackage("micropip");
+      await pyodide.runPythonAsync(`
+import micropip
+await micropip.install("utm")
+import utm
+from js import document
+
+def parse_and_convert():
+    input_text = document.getElementById("geoInput").value.strip()
+    lines = input_text.split("\\n")
+
+    zone_number = int(document.getElementById("zoneNumber").value)
+    hemi_ns = document.querySelector("input[name='hemisphereNS']:checked").value
+    hemi_ew = document.querySelector("input[name='hemisphereEW']:checked").value
+    is_south = hemi_ns == "south"
+    is_west = hemi_ew == "west"
+
+    html = "<table><tr><th class='no-copy'>Select</th><th>Lat</th><th>Lon</th><th>Name</th><th>Description</th></tr>"
+
+    for line in lines:
+        parts = [p.strip() for p in (line.split("\\t") if "\\t" in line else line.split())]
+        if len(parts) < 3:
+            continue
+        easting, northing, name = parts[0], parts[1], parts[2]
+        desc = parts[3] if len(parts) > 3 else ""
+        try:
+            e = float(easting)
+            n = float(northing)
+            lat, lon = utm.to_latlon(e, n, zone_number, northern=not is_south)
+            if is_west:
+                lon = -abs(lon)
+            row = f"<tr><td class='no-copy'><input type='checkbox' class='wtg-checkbox' data-name='{name}'></td><td>{lat:.6f}</td><td>{lon:.6f}</td><td>{name}</td><td class='desc'>{desc}</td></tr>"
+            html += row
+        except Exception as e:
+            html += f"<tr><td colspan='5'>Error in line: {line} - {e}</td></tr>"
+
+    html += "</table>"
+    document.getElementById("results").innerHTML = html
+      `);
+
+      document.getElementById("convertBtn").addEventListener("click", async () => {
+        lastCheckedIndex = null;
+        await pyodide.runPythonAsync("parse_and_convert()")
+        attachCheckboxHandlers();
+      });
+    }
+
+    function attachCheckboxHandlers() {
+      const checkboxes = Array.from(document.querySelectorAll(".wtg-checkbox"));
+      checkboxes.forEach((cb, index) => {
+        cb.addEventListener("click", function (e) {
+          if (e.shiftKey && lastCheckedIndex !== null) {
+            const start = Math.min(lastCheckedIndex, index);
+            const end = Math.max(lastCheckedIndex, index);
+            for (let i = start; i <= end; i++) {
+              checkboxes[i].checked = true;
+            }
+          }
+          lastCheckedIndex = index;
+        });
+      });
+    }
+
+    function applyDescription() {
+      const desc = document.getElementById("descriptionInput").value.trim();
+      const checkboxes = document.querySelectorAll(".wtg-checkbox:checked");
+      checkboxes.forEach(cb => {
+        const row = cb.closest("tr");
+        const descCell = row.querySelector(".desc");
+        if (descCell) descCell.textContent = desc;
+      });
+    }
+
+    function selectAllCheckboxes(state) {
+      const checkboxes = document.querySelectorAll(".wtg-checkbox");
+      checkboxes.forEach(cb => cb.checked = state);
+    }
+
+    function copyAllRows() {
+      let text = "Lat\tLon\tName\tDescription\n";
+      document.querySelectorAll("#results table tr:not(:first-child)").forEach(row => {
+        const cells = row.querySelectorAll("td");
+        if (cells.length === 5) {
+          const lat = cells[1].innerText.trim();
+          const lon = cells[2].innerText.trim();
+          const name = cells[3].innerText.trim();
+          const desc = cells[4].innerText.trim();
+          text += `${lat}\t${lon}\t${name}\t${desc}\n`;
+        }
+      });
+      navigator.clipboard.writeText(text).then(() => alert("Copied to clipboard!"));
+    }
+
+    document.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
